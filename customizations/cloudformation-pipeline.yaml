@@ -1,0 +1,243 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CI/CD to deploy workload deployment via CloudFormation'
+
+Parameters:
+  SandboxAccountId:
+    Type: String
+    Description: 'Account ID for the Sandbox account'
+  
+  GitHubRepository:
+    Type: String
+    Default: 'owner/repo-name'
+    Description: 'GitHub repository in format owner/repo-name'
+  
+  GitHubBranch:
+    Type: String
+    Default: 'main'
+    Description: 'GitHub branch to monitor'
+
+Resources:
+  # Shared CloudFormation Validation Project
+  CloudFormationValidationProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: CloudFormation-Validation
+      Description: 'Validate CloudFormation templates using cfn-lint and cfn-nag'
+      ServiceRole: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodeBuild-Role'
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        EnvironmentVariables:
+          - Name: TEMPLATE_PATH
+            Value: template.yaml
+            Type: PLAINTEXT
+          - Name: ENVIRONMENT_NAME
+            Value: default
+            Type: PLAINTEXT
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: 3.11
+                ruby: 3.2
+              commands:
+                - echo "Installing validation tools..."
+                - pip3 install cfn-lint --quiet
+                - gem install cfn-nag --quiet
+                - echo "✅ Installed cfn-lint $(cfn-lint --version)"
+                - echo "✅ Installed cfn-nag $(cfn_nag --version)"
+            
+            pre_build:
+              commands:
+                - echo "=========================================="
+                - echo "Validating $ENVIRONMENT_NAME Environment"
+                - echo "Template $TEMPLATE_PATH"
+                - echo "=========================================="
+                - |
+                  if [ ! -f "$TEMPLATE_PATH" ]; then
+                    echo "❌ ERROR: Template file not found at $TEMPLATE_PATH"
+                    ls -la
+                    exit 1
+                  fi
+                - echo "✅ Template file found"
+            
+            build:
+              commands:
+                - echo ""
+                - echo "🔍 Running cfn-lint..."
+                - cfn-lint "$TEMPLATE_PATH" --format parseable
+                - echo "✅ cfn-lint validation passed"
+                
+                - echo ""
+                - echo "🔒 Running cfn-nag security scan..."
+                - cfn_nag_scan --input-path "$TEMPLATE_PATH" --output-format txt
+                - echo "✅ cfn-nag validation passed"
+                
+                - echo ""
+                - echo "=========================================="
+                - echo "✅ All validations completed successfully"
+                - echo "=========================================="
+          
+          artifacts:
+            files:
+              - '**/*'
+      TimeoutInMinutes: 10
+      Tags:
+        - Key: name
+          Value: CloudFormation-Validation
+        - Key: owner
+          Value: email-id@example.com
+        - Key: environment
+          Value: production
+        - Key: compliance-scope
+          Value: gdpr
+
+  # Workload Deployment Pipeline
+  WorkloadDeploymentPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: WorkloadDeploymentPipeline
+      RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodePipeline-Role'
+      ArtifactStore:
+        Type: S3
+        Location: '{{resolve:ssm:/cicd/artifacts-bucket-name}}'
+        EncryptionKey:
+          Id: '{{resolve:ssm:/cicd/s3-kms-key-arn}}'
+          Type: KMS
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitHub
+            Push:
+              - FilePaths:
+                  Includes:
+                    - cloudformation/template.yaml
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHub
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: '1'
+              Configuration:
+                ConnectionArn: '{{resolve:ssm:/cicd/codestar-connection-arn}}'
+                FullRepositoryId: !Ref GitHubRepository
+                BranchName: !Ref GitHubBranch
+                OutputArtifactFormat: CODE_ZIP
+              OutputArtifacts:
+                - Name: SourceOutput
+              RunOrder: 1
+        
+        - Name: Validate
+          Actions:
+            - Name: ValidateTemplate
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref CloudFormationValidationProject
+                EnvironmentVariables: |
+                  [
+                    {
+                      "name": "TEMPLATE_PATH",
+                      "value": "cloudformation/template.yaml",
+                      "type": "PLAINTEXT"
+                    },
+                    {
+                      "name": "ENVIRONMENT_NAME",
+                      "value": "Sandbox",
+                      "type": "PLAINTEXT"
+                    }
+                  ]
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: ValidatedOutput
+              RunOrder: 1
+        
+        - Name: CreateChangeSet
+          Actions:
+            - Name: CreateChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                StackName: Workload-Deployment
+                ChangeSetName: Workload-Deployment-ChangeSet
+                TemplatePath: SourceOutput::cloudformation/template.yaml
+                Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM
+                RoleArn: !Sub 'arn:aws:iam::${SandboxAccountId}:role/CloudFormation-Deployment-Role'
+              InputArtifacts:
+                - Name: SourceOutput
+              RoleArn: !Sub 'arn:aws:iam::${SandboxAccountId}:role/CrossAccount-Deployment-Role'
+              RunOrder: 1
+        
+        - Name: Approval
+          Actions:
+            - Name: ReviewChangeSet
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Configuration:
+                CustomData: |
+                  Review workload deployment changeset
+                  
+                  Template validated with:
+                  ✅ cfn-lint (syntax and best practices)
+                  ✅ cfn-nag (security analysis)
+                  
+                  Review the changeset in CloudFormation console before approving.
+              RunOrder: 1
+        
+        - Name: ExecuteChangeSet
+          Actions:
+            - Name: Deploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                StackName: Workload-Deployment
+                ChangeSetName: Workload-Deployment-ChangeSet
+                RoleArn: !Sub 'arn:aws:iam::${SandboxAccountId}:role/CloudFormation-Deployment-Role'
+              RoleArn: !Sub 'arn:aws:iam::${SandboxAccountId}:role/CrossAccount-Deployment-Role'
+              RunOrder: 1
+      Tags:
+        - Key: Name
+          Value: WorkloadDeploymentPipeline
+        - Key: owner
+          Value: email-id@example.com
+        - Key: environment
+          Value: production
+        - Key: compliance-scope
+          Value: gdpr
+
+Outputs:
+  WorkloadDeploymentPipelineName:
+    Description: Name of the workload deployment pipeline
+    Value: !Ref WorkloadDeploymentPipeline
+    Export:
+      Name: WorkloadDeploymentPipelineName
+
+  ValidationProjectName:
+    Description: Name of the CloudFormation validation project
+    Value: !Ref CloudFormationValidationProject
+    Export:
+      Name: CloudFormationValidationProjectName

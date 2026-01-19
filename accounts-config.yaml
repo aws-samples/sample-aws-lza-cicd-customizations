@@ -1,0 +1,36 @@
+mandatoryAccounts:
+  - name: Management
+    description: >-
+      The management (primary) account. Do not change the name field for this
+      mandatory account. Note, the account name key does not need to match the
+      AWS account name.
+    email: your-email+LZA-Blog-MGMT@example.com
+    organizationalUnit: Root
+    warm: false
+  - name: LogArchive
+    description: >-
+      The log archive account. Do not change the name field for this mandatory
+      account. Note, the account name key does not need to match the AWS account
+      name.
+    email: your-email+LZA-Blog-LogArchive@example.com
+    organizationalUnit: Security
+    warm: false
+  - name: Audit
+    description: >-
+      The security audit account (also referred to as the audit account). Do not
+      change the name field for this mandatory account. Note, the account name
+      key does not need to match the AWS account name.
+    email: your-email+LZA-Blog-Audit@example.com
+    organizationalUnit: Security
+    warm: false
+workloadAccounts:
+  - name: Sandbox
+    description: >-
+      The sandbox account. Note, the account name key does not need to match the AWS account name.
+    email: your-email+LZA-Blog-Sandbox@example.com
+    organizationalUnit: Sandbox
+  - name: SharedServices
+    description: >-
+      The shared services account for centralized services like Workload and LZA Cutomization Pipelines
+    email: your-email+LZA-Blog-SharedServices@example.com
+    organizationalUnit: Infrastructure

@@ -1,0 +1,9 @@
+enable: true
+organizationalUnits:
+  - name: Security
+  - name: Infrastructure
+  - name: Sandbox
+serviceControlPolicies: []
+taggingPolicies: []
+chatbotPolicies: []
+backupPolicies: []

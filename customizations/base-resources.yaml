@@ -1,0 +1,420 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Base resources including S3 buckets, KMS keys, Parameter Stores, DynamoDB Table and GitHub connection'
+
+Parameters:
+  ConnectionName:
+    Type: String
+    Description: 'Name of the CodeStar connection'
+    Default: github-codestar-connection
+
+  ProviderType:
+    Type: String
+    Default: 'GitHub'
+    AllowedValues: ['GitHub', 'GitHubEnterpriseServer', 'Bitbucket']
+    Description: 'Git provider type'
+
+  CICDBucketPrefix:
+    Type: String
+    Description: 'Name prefix of CICD S3 bucket name'
+    Default: cicd-artifacts
+
+  TerraformStatesBucketPrefix:
+    Type: String
+    Description: 'Name prefix of Terraform States S3 bucket name'
+    Default: terraform-states
+
+  SandboxAccountId:
+    Type: String
+    Description: 'Account ID of the Sandbox account'
+
+  RetentionDays:
+    Type: Number
+    Default: 3
+    Description: 'Number of days to retain artifacts'
+
+Resources:
+
+  # KMS Key for S3 Bucket Encryption
+  S3KMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: 'KMS Key for CodePipeline artifacts bucket encryption'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow CodePipeline Service
+            Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey
+              - kms:ReEncrypt*
+              - kms:CreateGrant
+              - kms:DescribeKey
+            Resource: '*'
+          - Sid: Allow CI/CD and Deployment Roles
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodePipeline-Role'
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodeBuild-Role'
+                - !Sub 'arn:aws:iam::${SandboxAccountId}:role/CrossAccount-Deployment-Role'
+                - !Sub 'arn:aws:iam::${SandboxAccountId}:role/CloudFormation-Deployment-Role'
+                - !Sub 'arn:aws:iam::${SandboxAccountId}:role/Terraform-Deployment-Role'
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+      Tags:
+        - Key: name
+          Value: 'codepipeline-artifacts-kms-key'
+        - Key: owner
+          Value: email-id@example.com
+        - Key: environment
+          Value: production
+        - Key: compliance-scope
+          Value: gdpr
+
+  # KMS Key Alias
+  S3KMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/codepipeline-artifacts
+      TargetKeyId: !Ref S3KMSKey
+
+  # CodeStar Connection for GitHub
+  GitHubConnection:
+    Type: AWS::CodeStarConnections::Connection
+    Properties:
+      ConnectionName: !Ref ConnectionName
+      ProviderType: !Ref ProviderType
+      Tags:
+        - Key: name
+          Value: !Ref ConnectionName
+        - Key: owner
+          Value: email-id@example.com
+        - Key: environment
+          Value: production
+        - Key: compliance-scope
+          Value: gdpr
+
+  # S3 Bucket for CodePipeline Artifacts
+  CICDArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${CICDBucketPrefix}-${AWS::AccountId}-${AWS::Region}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref S3KMSKey
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldArtifacts
+            Status: Enabled
+            ExpirationInDays: !Ref RetentionDays
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 7
+          - Id: DeleteIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: name
+          Value: !Sub '${CICDBucketPrefix}-${AWS::AccountId}-${AWS::Region}'
+        - Key: owner
+          Value: email-id@example.com
+        - Key: environment
+          Value: production
+        - Key: compliance-scope
+          Value: gdpr
+
+  # S3 Bucket Policy for CI/CD Artifacts
+  CICDArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CICDArtifactsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCodePipelineAccess
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodePipeline-Role'
+            Action:
+              - s3:GetBucketVersioning
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:PutObject
+              - s3:PutObjectAcl
+            Resource:
+              - !GetAtt CICDArtifactsBucket.Arn
+              - !Sub '${CICDArtifactsBucket.Arn}/*'
+          - Sid: AllowCrossAccountDeploymentRoles
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${SandboxAccountId}:role/CrossAccount-Deployment-Role'
+                - !Sub 'arn:aws:iam::${SandboxAccountId}:role/CloudFormation-Deployment-Role'
+                - !Sub 'arn:aws:iam::${SandboxAccountId}:role/Terraform-Deployment-Role'
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - !Sub '${CICDArtifactsBucket.Arn}/*'
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt CICDArtifactsBucket.Arn
+              - !Sub '${CICDArtifactsBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  # S3 Bucket for Terraform States
+  TerraformStatesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${TerraformStatesBucketPrefix}-${AWS::AccountId}-${AWS::Region}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref S3KMSKey
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldArtifacts
+            Status: Enabled
+            ExpirationInDays: !Ref RetentionDays
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 7
+          - Id: DeleteIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: name
+          Value: !Sub '${TerraformStatesBucketPrefix}-${AWS::AccountId}-${AWS::Region}'
+        - Key: owner
+          Value: email-id@example.com
+        - Key: environment
+          Value: production
+        - Key: compliance-scope
+          Value: gdpr
+
+  # S3 Bucket Policy for CI/CD Artifacts
+  TerraformStatesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TerraformStatesBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCodePipelineAccess
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodePipeline-Role'
+            Action:
+              - s3:GetBucketVersioning
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:PutObject
+              - s3:PutObjectAcl
+            Resource:
+              - !GetAtt TerraformStatesBucket.Arn
+              - !Sub '${TerraformStatesBucket.Arn}/*'
+          - Sid: AllowCrossAccountDeploymentRoles
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${SandboxAccountId}:role/CrossAccount-Deployment-Role'
+                - !Sub 'arn:aws:iam::${SandboxAccountId}:role/CloudFormation-Deployment-Role'
+                - !Sub 'arn:aws:iam::${SandboxAccountId}:role/Terraform-Deployment-Role'
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - !Sub '${TerraformStatesBucket.Arn}/*'
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt TerraformStatesBucket.Arn
+              - !Sub '${TerraformStatesBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  TerraformStatesLockTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub terraform-states-lock-${AWS::AccountId}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: LockID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: LockID
+          KeyType: HASH
+      Tags:
+        - Key: name
+          Value: !Sub terraform-states-lock-${AWS::AccountId}
+        - Key: owner
+          Value: email-id@example.com
+        - Key: environment
+          Value: production
+        - Key: compliance-scope
+          Value: gdpr
+
+  # SSM Parameters for cross-template references
+  GitHubConnectionArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/cicd/codestar-connection-arn'
+      Type: String
+      Value: !Ref GitHubConnection
+      Description: 'ARN of the GitHub CodeStar connection for CI/CD pipelines'
+      Tags:
+        name: '/cicd/codestar-connection-arn'
+        owner: email-id@example.com
+        environment: production
+        compliance-scope: gdpr
+
+  CICDBucketNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/cicd/artifacts-bucket-name'
+      Type: String
+      Value: !Ref CICDArtifactsBucket
+      Description: 'Name of the S3 bucket for CI/CD pipeline artifacts'
+      Tags:
+        name: '/cicd/artifacts-bucket-name'
+        owner: email-id@example.com
+        environment: production
+        compliance-scope: gdpr
+
+  TerraformStatesBucketNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/terraform/states-bucket-name'
+      Type: String
+      Value: !Ref TerraformStatesBucket
+      Description: 'Name of the S3 bucket for Terraform States'
+      Tags:
+        name: '/terraform/states-bucket-name'
+        owner: email-id@example.com
+        environment: production
+        compliance-scope: gdpr
+
+  S3KMSKeyParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/cicd/s3-kms-key-arn'
+      Type: String
+      Value: !GetAtt S3KMSKey.Arn
+      Description: 'ARN of the KMS key for S3 objects encryption'
+      Tags:
+        name: '/cicd/s3-kms-key-arn'
+        owner: email-id@example.com
+        environment: production
+        compliance-scope: gdpr
+
+  TerraformStatesLockDynamoDBTableParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/terraform/dynamodb-states-lock-table-name'
+      Type: String
+      Value: !Ref TerraformStatesLockTable
+      Description: 'Name of DynamoDB Table for Terraform States Lock'
+      Tags:
+        name: '/terraform/dynamodb-states-lock-table-name'
+        owner: email-id@example.com
+        environment: production
+        compliance-scope: gdpr
+
+Outputs:
+  GitHubConnectionArn:
+    Description: 'ARN of the GitHub CodeStar connection'
+    Value: !GetAtt GitHubConnection.ConnectionArn
+    Export:
+      Name: 'GitHub-CodeStar-Connection-ARN'
+
+  GitHubConnectionName:
+    Description: 'Name of the GitHub CodeStar connection'
+    Value: !Ref GitHubConnection
+    Export:
+      Name: 'GitHub-Connection-Name'
+
+  CICDBucketName:
+    Description: 'Name of the CICD artifacts bucket'
+    Value: !Ref CICDArtifactsBucket
+    Export:
+      Name: 'CICD-Artifacts-Bucket-Name'
+
+  CICDBucketArn:
+    Description: 'ARN of the CICD artifacts bucket'
+    Value: !GetAtt CICDArtifactsBucket.Arn
+    Export:
+      Name: 'CICD-Artifacts-Bucket-Arn'
+
+  TerraformStatesBucketName:
+    Description: 'Name of the Terraform States bucket'
+    Value: !Ref TerraformStatesBucket
+    Export:
+      Name: 'Terraform-States-Bucket-Name'
+
+  TerraformStatesBucketArn:
+    Description: 'ARN of the Terraform States bucket'
+    Value: !GetAtt TerraformStatesBucket.Arn
+    Export:
+      Name: 'Terraform-States-Bucket-Arn'
+
+  KMSKeyArn:
+    Description: 'ARN of the KMS key used for objects encryption'
+    Value: !GetAtt S3KMSKey.Arn
+    Export:
+      Name: 'S3-KMS-Key-Arn'
+
+  KMSKeyId:
+    Description: 'ID of the KMS key used for objects encryption'
+    Value: !Ref S3KMSKey
+    Export:
+      Name: 'S3-KMS-Key-Id'
+
+  TerraoformStateLockTableName:
+    Description: Name of DynamoDB Table for Terraform States Lock
+    Value: !Ref TerraformStatesLockTable
+    Export:
+      Name: 'Terraform-States-Lock-Name'

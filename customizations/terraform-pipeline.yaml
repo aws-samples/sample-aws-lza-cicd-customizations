@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Terraform CI/CD Pipeline with AWS CodeConnections'
+
+Parameters:
+  GitHubRepository:
+    Type: String
+    Default: 'owner/repo-name'
+    Description: 'GitHub repository in format owner/repo-name'
+  
+  GitHubBranch:
+    Type: String
+    Default: 'main'
+    Description: 'GitHub branch to monitor'
+Resources:
+
+  TerraformPlanBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: TerraformPlanBuildProject
+      ServiceRole: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodeBuild-Role'
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:4.0
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              commands:
+                - yum install -y yum-utils
+                - yum-config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+                - yum -y install terraform
+                - wget -q -O tflint.zip https://github.com/terraform-linters/tflint/releases/latest/download/tflint_linux_amd64.zip
+                - unzip tflint.zip
+                - chmod +x tflint
+                - mv tflint /usr/local/bin/
+                - wget -q -O tfsec https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64
+                - chmod +x tfsec
+                - mv tfsec /usr/local/bin/
+            pre_build:
+              commands:
+                - cd terraform/
+                - terraform init
+                - terraform fmt -check
+                - terraform validate
+                - tflint
+                - tfsec . --no-color
+            build:
+              commands:
+                - terraform plan -compact-warnings -out=tfplan
+          artifacts:
+            files:
+              - terraform/**/*
+      Tags:
+        - Key: Name
+          Value: TerraformPlanBuildProject
+
+  TerraformApplyBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: TerraformApplyBuildProject
+      ServiceRole: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodeBuild-Role'
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:4.0
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              commands:
+                - yum install -y yum-utils
+                - yum-config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+                - yum -y install terraform
+            build:
+              commands:
+                - cd terraform/
+                - terraform init
+                - terraform apply tfplan
+      Tags:
+        - Key: Name
+          Value: TerraformApplyBuildProject
+
+  TerraformPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: TerraformPipeline
+      RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodePipeline-Role'
+      ArtifactStore:
+        Type: S3
+        Location: '{{resolve:ssm:/cicd/artifacts-bucket-name}}'
+        EncryptionKey:
+          Id: '{{resolve:ssm:/cicd/s3-kms-key-arn}}'
+          Type: KMS
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitHub
+            Push:
+              - FilePaths:
+                  Includes:
+                    - terraform/**
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHub
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: '1'
+              Configuration:
+                ConnectionArn: '{{resolve:ssm:/cicd/codestar-connection-arn}}'
+                FullRepositoryId: !Ref GitHubRepository
+                BranchName: !Ref GitHubBranch
+                OutputArtifactFormat: CODE_ZIP
+              OutputArtifacts:
+                - Name: SourceCode
+        - Name: Plan
+          Actions:
+            - Name: TerraformPlan
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref TerraformPlanBuildProject
+              InputArtifacts:
+                - Name: SourceCode
+              OutputArtifacts:
+                - Name: BuildOutput
+        - Name: Approve
+          Actions:
+            - Name: ManualApproval
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Version: 1
+                Provider: Manual
+              Configuration:
+                CustomData: |
+                  Review checks performed in prior stage
+                  
+                  Terrafrom code validated with:
+                  ✅ tflint (syntax and best practices)
+                  ✅ terraform fmt (formatting)
+                  ✅ terraform validate (syntax only)
+                  ✅ tfsec (security analysis)
+                  ✅ terraform plan (synthesis step)
+                  
+                  Review the changeset in CloudFormation console before approving.
+        - Name: Apply
+          Actions:
+            - Name: TerraformApply
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref TerraformApplyBuildProject
+              InputArtifacts:
+                - Name: BuildOutput
+      Tags:
+        - Key: Name
+          Value: TerraformPipeline
+
+Outputs:
+  TerraformPipelineName:
+    Description: Name of Terraform pipeline
+    Value: !Ref TerraformPipeline
+    Export:
+      Name: TerraformPipelineName
+  TerraformPlanProjectName:
+    Description: Name of the Terraform plan project
+    Value: !Ref TerraformPlanBuildProject
+    Export:
+      Name: TerraformPlanProjectName
+  TerraformApplyProjectName:
+    Description: Name of the Terraform apply project
+    Value: !Ref TerraformApplyBuildProject
+    Export:
+      Name: TerraformApplyProjectName

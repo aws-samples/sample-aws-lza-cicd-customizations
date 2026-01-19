@@ -1,0 +1,45 @@
+customizations:
+  cloudFormationStacks:
+    - name: CICD-Pipeline-Foundation
+      description: Base resources for CI/CD pipelines
+      deploymentTargets:
+        accounts:
+          - SharedServices
+      regions:
+        - eu-west-2
+      runOrder: 10
+      template: customizations/base-resources.yaml
+      terminationProtection: true
+      parameters:
+        - name: SandboxAccountId
+          value: "{{ account Sandbox }}"
+
+    - name: CloudFormation-Workload-Deployment-Pipeline
+      description: Workload deployment pipeline in Sandbox account
+      deploymentTargets:
+        accounts:
+          - SharedServices
+      regions:
+        - eu-west-2
+      runOrder: 20
+      template: customizations/cloudformation-pipeline.yaml
+      terminationProtection: true
+      parameters:
+        - name: GitHubBranch
+          value: main
+        - name: SandboxAccountId
+          value: "{{ account Sandbox }}"
+
+    - name: Terraform-Pipeline
+      description: Pipeline to deploy AWS network resources in Sandbox account through Terraform
+      deploymentTargets:
+        accounts:
+          - SharedServices
+      regions:
+        - eu-west-2
+      runOrder: 30
+      template: customizations/terraform-pipeline.yaml
+      terminationProtection: false
+      parameters:
+        - name: GitHubBranch
+          value: main

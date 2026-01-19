@@ -1,0 +1,89 @@
+providers: []
+policySets:
+  # CI/CD Policies for SharedServices Account
+  - deploymentTargets:
+      accounts:
+        - SharedServices
+    policies:
+      - name: CodePipeline-Policy
+        policy: iam-policies/codepipeline-policy.json
+      - name: CodeBuild-Policy
+        policy: iam-policies/codebuild-policy.json
+
+  # Cross-Account Deployment Policies
+  - deploymentTargets:
+      accounts:
+        - Sandbox
+    policies:
+      - name: CrossAccount-Deployment-Policy
+        policy: iam-policies/crossaccount-deployment-policy.json
+
+  # Terraform Deployment Policies
+  - deploymentTargets:
+      accounts:
+        - Sandbox
+    policies:
+      - name: Terraform-Deployment-Policy
+        policy: iam-policies/terraform-deployment-policy.json
+
+  # CloudFormation Service Role Policy
+  - deploymentTargets:
+      accounts:
+        - Sandbox
+    policies:
+      - name: CloudFormation-Deployment-Policy
+        policy: iam-policies/cloudformation-deployment-policy.json
+roleSets:
+  # CI/CD Roles for SharedServices Account
+  - deploymentTargets:
+      accounts:
+        - SharedServices
+    roles:
+      - name: CodePipeline-Role
+        assumedBy:
+          - type: service
+            principal: codepipeline.amazonaws.com
+        policies:
+          customerManaged:
+            - CodePipeline-Policy
+
+      - name: CodeBuild-Role
+        assumedBy:
+          - type: service
+            principal: codebuild.amazonaws.com
+        policies:
+          awsManaged:
+            - CloudWatchLogsFullAccess
+          customerManaged:
+            - CodeBuild-Policy
+
+  # Cross-Account Deployment Roles
+  - deploymentTargets:
+      accounts:
+        - Sandbox
+    roles:
+      - name: Terraform-Deployment-Role
+        assumedBy:
+          - type: account
+            principal: SharedServices
+        policies:
+          customerManaged:
+            - Terraform-Deployment-Policy
+
+      - name: CrossAccount-Deployment-Role
+        assumedBy:
+          - type: account
+            principal: SharedServices
+        policies:
+          customerManaged:
+            - CrossAccount-Deployment-Policy
+
+      - name: CloudFormation-Deployment-Role
+        assumedBy:
+          - type: service
+            principal: cloudformation.amazonaws.com
+        policies:
+          customerManaged:
+            - CloudFormation-Deployment-Policy
+groupSets: []
+userSets: []

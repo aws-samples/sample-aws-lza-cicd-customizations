@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: AWS Support
+    url: https://aws.amazon.com/support
+    about: For AWS service-specific issues, contact AWS Support
+  - name: Security Issue
+    url: https://aws.amazon.com/security/vulnerability-reporting/
+    about: Report security vulnerabilities through AWS Security
