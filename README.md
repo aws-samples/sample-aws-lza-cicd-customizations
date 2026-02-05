@@ -1,9 +1,7 @@
 
-# 🚀 Building CI/CD Pipelines with AWS Landing Zone Accelerator: Terraform and CloudFormation Automation
+# Building CI/CD Pipelines with Landing Zone Accelerator on AWS: Terraform and CloudFormation Automation
 
-**CI/CD pipelines for multi-account AWS deployments using AWS Landing Zone Accelerator, Terraform, and CloudFormation.**
-
-Perfect for organizations managing complex multi-account AWS environments with automated infrastructure deployment and governance.
+Suitable for organizations seeking to automate infrastructure deployment and governance across complex multi-account AWS environments.
 
 ---
 
@@ -11,7 +9,7 @@ Perfect for organizations managing complex multi-account AWS environments with a
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Architecture](#architecture)
@@ -31,11 +29,11 @@ Perfect for organizations managing complex multi-account AWS environments with a
 
 ---
 
-## 🎯 Overview
+## Overview
 
 ### What This Does
 
-Extends **AWS Landing Zone Accelerator (LZA)** with custom CI/CD pipelines for deploying infrastructure across multiple AWS accounts using both **Terraform** and **CloudFormation**.
+Extends **Landing Zone Accelerator on AWS (LZA)** with custom CI/CD pipelines for deploying infrastructure across multiple AWS accounts using both **Terraform** and **CloudFormation**.
 
 ```
 GitHub → CodePipeline → CodeBuild → Cross-Account Deployment → Target Account
@@ -43,7 +41,7 @@ GitHub → CodePipeline → CodeBuild → Cross-Account Deployment → Target Ac
 
 ### Key Components
 
-- **AWS Landing Zone Accelerator** - Multi-account AWS environment foundation
+- **Landing Zone Accelerator on AWS** - Multi-account AWS environment foundation
 - **AWS CodePipeline** - Orchestrates CI/CD workflows
 - **AWS CodeBuild** - Executes validation and deployment
 - **GitHub CodeStar Connection** - Source code integration
@@ -62,36 +60,9 @@ GitHub → CodePipeline → CodeBuild → Cross-Account Deployment → Target Ac
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  SharedServices Account (CI/CD Hub)                         │
-│                                                             │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
-│  │ CodePipeline │───▶│  CodeBuild   │───▶│  S3 Bucket   │   │
-│  │              │    │              │    │  (Artifacts) │   │
-│  └──────────────┘    └──────────────┘    └──────────────┘   │
-│         │                    │                    │         │
-│         │                    │                    │         │
-│         ▼                    ▼                    ▼         │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  GitHub CodeStar Connection                          │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              │ Cross-Account Role Assumption
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Sandbox Account (Target)                                   │
-│                                                             │
-│  ┌──────────────┐    ┌──────────────-┐   ┌──────────────┐   │
-│  │ Terraform    │    │ CloudFormation│   │   VPC        │   │
-│  │ Deployment   │    │  Deployment   │   │   Resources  │   │
-│  │ Role         │    │  Role         │   │              │   │
-│  └──────────────┘    └────────────-──┘   └──────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
+![Architecture Diagram](docs/images/architecture.png)
 
 ### Multi-Account Structure
 
@@ -104,7 +75,7 @@ GitHub → CodePipeline → CodeBuild → Cross-Account Deployment → Target Ac
 
 ---
 
-## ✅ Prerequisites
+## Prerequisites
 
 ### Required Software
 - **AWS CLI** v2.x configured with appropriate permissions ([Setup Guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html))
@@ -113,7 +84,7 @@ GitHub → CodePipeline → CodeBuild → Cross-Account Deployment → Target Ac
 - **Python** >= 3.11 (for validation tools)
 - **Ruby** >= 3.2 (for cfn-nag)
 
-### AWS Landing Zone Accelerator
+### Landing Zone Accelerator on AWS
 - **LZA Deployed** - Version 4.0 or later
 - **Control Tower Enabled** - With Landing Zone v4.0
 - **Organizational Units** - Root, Security, Infrastructure, Sandbox
@@ -136,7 +107,7 @@ Your AWS credentials need the following permissions:
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Clone the Repository
 
@@ -208,7 +179,7 @@ The GitHub CodeStar Connection requires manual activation:
 
 ---
 
-## 🚀 Deployment Guide
+## Deployment Guide
 
 ### LZA Configuration Structure
 
@@ -272,7 +243,7 @@ Deploys:
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Account Configuration
 
@@ -312,7 +283,7 @@ The IAM policies are designed for comprehensive infrastructure management. To re
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ### Unit Testing
 
@@ -367,7 +338,7 @@ aws ec2 describe-vpcs
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common LZA Issues
 
@@ -460,7 +431,7 @@ aws ssm delete-parameters \
 
 ---
 
-## 🔒 Security
+## Security
 
 ### Security Best Practices Implemented
 
@@ -499,19 +470,19 @@ When moving to production:
 
 ---
 
-## 💰 Cost Estimates
+## Cost Estimates
 
 ### Monthly Costs (Small Application)
 
-| Service | Monthly Cost |
-|---------|--------------|
-| CodePipeline | $1 per active pipeline × 2 = $2 |
-| CodeBuild | $0.005/min × 100 builds × 5 min = $2.50 |
-| S3 Storage | $0.023/GB × 10 GB = $0.23 |
-| DynamoDB | On-demand (minimal) = $0.50 |
-| KMS | $1/month + $0.03/10k requests = $1.50 |
-| CloudWatch Logs | $0.50/GB × 1 GB = $0.50 |
-| **Total** | **~$7-10/month** |
+| Service          | Calculation                              | Monthly Cost |
+|:-----------------|:-----------------------------------------|-------------:|
+| CodePipeline     | $1 per active pipeline × 2               | $2.00        |
+| CodeBuild        | $0.005/min × 100 builds × 5 min          | $2.50        |
+| S3 Storage       | $0.023/GB × 10 GB                        | $0.23        |
+| DynamoDB         | On-demand (minimal)                      | $0.50        |
+| KMS              | $1/month + $0.03/10k requests            | $1.50        |
+| CloudWatch Logs  | $0.50/GB × 1 GB                          | $0.50        |
+| **Total**        |                                          | **$7-10**   |
 
 **Notes:**
 - Costs scale with usage and number of deployments
@@ -520,19 +491,19 @@ When moving to production:
 
 ---
 
-## 📝 Contributing
+## Contributing
 
 We welcome contributions! Please read our [Code of Conduct](CODE_OF_CONDUCT.md) and see [CONTRIBUTING](CONTRIBUTING.md) for details on submitting pull requests.
 
 ---
 
-## 📄 License
+## License
 
 This library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🆘 Getting Help
+## Getting Help
 
 For questions or issues:
 
@@ -544,9 +515,9 @@ This is a sample solution and is not officially supported by AWS. Use at your ow
 
 ---
 
-## 📚 Resources
+## Resources
 
-### AWS Landing Zone Accelerator
+### Landing Zone Accelerator on AWS
 - [LZA Developer Guide](https://docs.aws.amazon.com/solutions/latest/landing-zone-accelerator-on-aws/)
 - [LZA GitHub Repository](https://github.com/awslabs/landing-zone-accelerator-on-aws)
 - [LZA Best Practices](https://docs.aws.amazon.com/prescriptive-guidance/latest/migration-aws-environment/welcome.html)
