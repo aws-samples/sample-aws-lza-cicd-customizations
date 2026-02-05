@@ -183,15 +183,16 @@ The GitHub CodeStar Connection requires manual activation:
 
 ### LZA Configuration Structure
 
+After copying files from this repository, your LZA configuration repository will have the following structure:
+
 ```
-aws-accelerator-config/
+aws-accelerator-config/              # Your LZA configuration repository
 ├── accounts-config.yaml          # AWS account definitions
 ├── customizations-config.yaml    # CI/CD pipeline stacks
 ├── global-config.yaml            # Global LZA settings
 ├── iam-config.yaml               # IAM roles and policies
 ├── network-config.yaml           # Network configuration
 ├── organization-config.yaml      # AWS Organizations structure
-├── security-config.yaml          # Security controls
 ├── iam-policies/
 │   ├── codebuild-policy.json
 │   ├── codepipeline-policy.json
@@ -217,7 +218,7 @@ Deploys:
 - DynamoDB table for Terraform state locking
 - SSM parameters for cross-stack references
 
-**Deployment Time**: ~5 minutes
+**Deployment Time**: 10-15 minutes
 
 #### Stage 2: CloudFormation Pipeline (SharedServices)
 
@@ -228,7 +229,7 @@ Deploys:
 - CodeBuild project for validation (cfn-lint, cfn-nag)
 - Cross-account deployment configuration
 
-**Deployment Time**: ~3 minutes
+**Deployment Time**: 5-10 minutes
 
 #### Stage 3: Terraform Pipeline (SharedServices)
 
@@ -239,7 +240,7 @@ Deploys:
 - CodeBuild projects for plan and apply
 - Validation tools (terraform fmt, validate, tflint, tfsec)
 
-**Deployment Time**: ~3 minutes
+**Deployment Time**: 5-10 minutes
 
 ---
 
